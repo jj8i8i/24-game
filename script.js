@@ -18,70 +18,102 @@ document.getElementById('solve-btn').addEventListener('click', () => {
 
     const solution = find24(numbers);
     
-    if (solution.solution) {
-        resultEl.innerText = `${solution.solution} = 24`;
+    if (solution.found) {
+        resultEl.innerText = `${solution.equation} = 24`;
     } else {
-        resultEl.innerText = `ไม่สามารถสร้าง 24 ได้\nคำตอบที่ใกล้ที่สุดคือ:\n${solution.closestEq} = ${solution.closestVal}`;
+        // ตรวจสอบว่ามีคำตอบใกล้เคียงที่เป็นจำนวนเต็มหรือไม่
+        if (solution.closestVal === Infinity) {
+             resultEl.innerText = `ไม่สามารถสร้าง 24 หรือจำนวนเต็มใกล้เคียงได้`;
+        } else {
+             resultEl.innerText = `ไม่สามารถสร้าง 24 ได้\nคำตอบ (จำนวนเต็ม) ที่ใกล้ที่สุดคือ:\n${solution.closestEq} = ${solution.closestVal}`;
+        }
     }
     resultContainer.classList.remove('hidden');
 });
 
 function find24(numbers) {
-    const ops = ['+', '-', '*', '/'];
+    const initialItems = numbers.map(n => ({ value: n, str: `${n}` }));
     let solutions = [];
     let closest = { val: Infinity, eq: '' };
 
-    function getPermutations(arr) {
-        if (arr.length === 1) return [arr];
-        const result = [];
-        for (let i = 0; i < arr.length; i++) {
-            const current = arr[i];
-            const remaining = arr.slice(0, i).concat(arr.slice(i + 1));
-            const perms = getPermutations(remaining);
-            for (let p of perms) {
-                result.push([current, ...p]);
+    function solve(items) {
+        if (items.length === 1) {
+            const item = items[0];
+            const finalValue = item.value;
+
+            // **เงื่อนไขใหม่: ตรวจสอบ 24 โดยเผื่อค่า погрешность ของ float**
+            if (Math.abs(finalValue - 24) < 0.00001) {
+                solutions.push(item.str);
+            } 
+            // **เงื่อนไขใหม่: คำตอบใกล้เคียงต้องเป็นจำนวนเต็มเท่านั้น**
+            else if (finalValue % 1 === 0) { // ตรวจสอบว่าเป็นจำนวนเต็มหรือไม่
+                if (Math.abs(finalValue - 24) < Math.abs(closest.val - 24)) {
+                    closest = { val: finalValue, eq: item.str };
+                }
             }
+            return;
         }
-        return result;
-    }
 
-    const numPerms = getPermutations(numbers);
+        for (let i = 0; i < items.length; i++) {
+            for (let j = i + 1; j < items.length; j++) {
+                const a = items[i];
+                const b = items[j];
+                const remaining = items.filter((_, index) => index !== i && index !== j);
 
-    for (const p of numPerms) {
-        for (const op1 of ops) {
-            for (const op2 of ops) {
-                for (const op3 of ops) {
-                    // Pattern: (a op b) op (c op d)
-                    evaluate(`${p[0]} ${op1} ${p[1]}`, `${p[2]} ${op3} ${p[3]}`, op2);
-                    // Pattern: ((a op b) op c) op d
-                    evaluate(`(${p[0]} ${op1} ${p[1]}) ${op2} ${p[2]}`, `${p[3]}`, op3);
+                const operators = ['+', '-', '*', '/'];
+                for (const op of operators) {
+                    calculate(a, b, op, remaining);
+                    if (op === '-' || op === '/') {
+                        calculate(b, a, op, remaining);
+                    }
                 }
             }
         }
     }
+    
+    function calculate(item1, item2, op, remaining) {
+        let newValue, newStr;
 
-    function evaluate(expr1, expr2, op) {
-        try {
-            const val1 = eval(expr1);
-            const val2 = eval(expr2);
-            if (op === '/' && val2 === 0) return;
-
-            const finalExpr = `(${expr1}) ${op} (${expr2})`;
-            const finalVal = eval(finalExpr);
-
-            if (finalVal === 24) {
-                solutions.push(finalExpr.replace(/\s/g, ''));
-            } else {
-                if (Math.abs(finalVal - 24) < Math.abs(closest.val - 24)) {
-                    closest = { val: finalVal, eq: finalExpr.replace(/\s/g, '') };
-                }
-            }
-        } catch (e) {}
+        switch (op) {
+            case '+':
+                newValue = item1.value + item2.value;
+                newStr = `${item1.str}+${item2.str}`;
+                break;
+            case '-':
+                if (item1.value < item2.value) return; 
+                newValue = item1.value - item2.value;
+                newStr = `${item1.str}-${item2.str}`;
+                break;
+            case '*':
+                newValue = item1.value * item2.value;
+                newStr = `${addParen(item1, '*')}*${addParen(item2, '*')}`;
+                break;
+            case '/':
+                // **เงื่อนไขใหม่: อนุญาตให้หารไม่ลงตัวได้ แต่ห้ามหารด้วย 0**
+                if (item2.value === 0) return;
+                newValue = item1.value / item2.value;
+                newStr = `${addParen(item1, '/')} / ${addParen(item2, '/')}`;
+                break;
+        }
+        
+        solve([...remaining, { value: newValue, str: newStr }]);
     }
+
+    function addParen(item, operator) {
+        if (operator === '*' || operator === '/') {
+            if (item.str.includes('+') || item.str.includes('-')) {
+                return `(${item.str})`;
+            }
+        }
+        return item.str;
+    }
+
+    solve(initialItems);
 
     if (solutions.length > 0) {
-        return { solution: solutions[0] };
+        const uniqueSolutions = [...new Set(solutions)];
+        return { found: true, equation: uniqueSolutions[0] };
     }
-    return { solution: null, closestVal: closest.val, closestEq: closest.eq };
+    
+    return { found: false, closestVal: closest.val, closestEq: closest.eq };
 }
-
